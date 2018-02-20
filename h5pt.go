@@ -20,10 +20,11 @@ import (
 // Table is an hdf5 packet-table.
 type Table struct {
 	Identifier
+	strings []unsafe.Pointer
 }
 
 func newPacketTable(id C.hid_t) *Table {
-	t := &Table{Identifier{id}}
+	t := &Table{Identifier{id}, make([]unsafe.Pointer, 10)}
 	runtime.SetFinalizer(t, (*Table).finalizer)
 	return t
 }
@@ -41,6 +42,11 @@ func (t *Table) Close() error {
 	}
 	err := h5err(C.H5PTclose(t.id))
 	t.id = 0
+
+	for _, ptr := range t.strings {
+		C.free(ptr)
+	}
+
 	return err
 }
 
@@ -84,36 +90,48 @@ func (t *Table) ReadPackets(start, nrecords int, data interface{}) error {
 // Append appends packets to the end of a packet table.
 func (t *Table) Append(data interface{}) error {
 	rv := reflect.Indirect(reflect.ValueOf(data))
+	rp := reflect.Indirect(reflect.ValueOf(&data))
 	rt := rv.Type()
 	c_nrecords := C.size_t(0)
 	c_data := unsafe.Pointer(nil)
 
+	fmt.Println(rt.Kind())
 	switch rt.Kind() {
 
 	case reflect.Array:
 		c_nrecords = C.size_t(rv.Len())
-		c_data = unsafe.Pointer(rv.UnsafeAddr())
+		c_data = unsafe.Pointer(rp.UnsafeAddr())
 
 	case reflect.Slice:
 		c_nrecords = C.size_t(rv.Len())
-		slice := (*reflect.SliceHeader)(unsafe.Pointer(rv.UnsafeAddr()))
+		slice := (*reflect.SliceHeader)(unsafe.Pointer(rp.UnsafeAddr()))
 		c_data = unsafe.Pointer(slice.Data)
 
 	case reflect.String:
-		c_nrecords = C.size_t(rv.Len())
-		str := (*reflect.StringHeader)(unsafe.Pointer(rv.UnsafeAddr()))
-		c_data = unsafe.Pointer(str.Data)
+		c_nrecords = C.size_t(1)
+		string_data := C.CString(rv.String())
+		c_data = unsafe.Pointer(&string_data)
+		t.strings = append(t.strings, unsafe.Pointer(string_data))
 
 	case reflect.Ptr:
 		c_nrecords = C.size_t(1)
-		c_data = unsafe.Pointer(rv.Elem().UnsafeAddr())
+		ptrval := rp.Elem()
+		c_data = unsafe.Pointer(&ptrval)
+
+	case reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32,
+		reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16,
+		reflect.Uint32, reflect.Uint64, reflect.Uintptr, reflect.Float32,
+		reflect.Float64, reflect.Complex64, reflect.Complex128:
+		c_nrecords = C.size_t(1)
+		ptrval := rp.Elem()
+		c_data = unsafe.Pointer(&ptrval)
 
 	default:
-		c_nrecords = C.size_t(1)
-		c_data = unsafe.Pointer(rv.UnsafeAddr())
+		return fmt.Errorf("PT Append does not support datatype (%s).", rt.Kind())
 	}
 
 	err := C.H5PTappend(t.id, c_nrecords, c_data)
+
 	return h5err(err)
 }
 
@@ -185,9 +203,15 @@ func createTable(id C.hid_t, name string, dtype *Datatype, chunkSize, compressio
 	c_name := C.CString(name)
 	defer C.free(unsafe.Pointer(c_name))
 
+	properties := C.H5Pcreate(C.H5P_DATASET_CREATE)
+	if err := checkID(properties); err != nil {
+		return nil, err
+	}
+	C.H5Pset_deflate(properties, C.uint(compression))
+
 	chunk := C.hsize_t(chunkSize)
-	compr := C.int(compression)
-	hid := C.H5PTcreate_fl(id, c_name, dtype.id, chunk, compr)
+
+	hid := C.H5PTcreate(id, c_name, dtype.id, chunk, properties)
 	if err := checkID(hid); err != nil {
 		return nil, err
 	}
