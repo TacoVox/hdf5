@@ -22,11 +22,11 @@ import (
 // Table is an hdf5 packet-table.
 type Table struct {
 	Identifier
-	strings []*C.char
+	strings []unsafe.Pointer
 }
 
 func newPacketTable(id C.hid_t) *Table {
-	t := &Table{Identifier{id}, make([]*C.char, 1)}
+	t := &Table{Identifier{id}, make([]unsafe.Pointer, 1)}
 	runtime.SetFinalizer(t, (*Table).finalizer)
 	return t
 }
@@ -239,15 +239,9 @@ func createTable(id C.hid_t, name string, dtype *Datatype, chunkSize, compressio
 	c_name := C.CString(name)
 	defer C.free(unsafe.Pointer(c_name))
 
-	properties := C.H5Pcreate(C.H5P_DATASET_CREATE)
-	if err := checkID(properties); err != nil {
-		return nil, err
-	}
-	C.H5Pset_deflate(properties, C.uint(compression))
-
 	chunk := C.hsize_t(chunkSize)
-
-	hid := C.H5PTcreate(id, c_name, dtype.id, chunk, properties)
+	compr := C.int(compression)
+	hid := C.H5PTcreate_fl(id, c_name, dtype.id, chunk, compr)
 	if err := checkID(hid); err != nil {
 		return nil, err
 	}
