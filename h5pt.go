@@ -6,6 +6,8 @@ package hdf5
 
 // #include "hdf5.h"
 // #include "hdf5_hl.h"
+// #include <complex.h>
+// #include <stdint.h>
 // #include <stdlib.h>
 // #include <string.h>
 import "C"
@@ -20,11 +22,11 @@ import (
 // Table is an hdf5 packet-table.
 type Table struct {
 	Identifier
-	strings []unsafe.Pointer
+	strings []*C.char
 }
 
 func newPacketTable(id C.hid_t) *Table {
-	t := &Table{Identifier{id}, make([]unsafe.Pointer, 10)}
+	t := &Table{Identifier{id}, make([]*C.char, 1)}
 	runtime.SetFinalizer(t, (*Table).finalizer)
 	return t
 }
@@ -121,27 +123,27 @@ func (t *Table) Append(data interface{}) error {
 		c_data = unsafe.Pointer(&val)
 
 	case reflect.Int8:
-		val := C.char(data.(int8))
+		val := C.int8_t(data.(int8))
 		c_data = unsafe.Pointer(&val)
 
 	case reflect.Uint8:
-		val := C.uchar(data.(int8))
+		val := C.uint8_t(data.(int8))
 		c_data = unsafe.Pointer(&val)
 
 	case reflect.Int32:
-		val := C.int(data.(int32))
+		val := C.int32_t(data.(int32))
 		c_data = unsafe.Pointer(&val)
 
 	case reflect.Uint32:
-		val := C.uint(data.(uint32))
+		val := C.uint32_t(data.(uint32))
 		c_data = unsafe.Pointer(&val)
 
 	case reflect.Int64:
-		val := C.long(data.(int64))
+		val := C.int64_t(data.(int64))
 		c_data = unsafe.Pointer(&val)
 
 	case reflect.Uint64:
-		val := C.ulong(data.(uint64))
+		val := C.uint64_t(data.(uint64))
 		c_data = unsafe.Pointer(&val)
 
 	case reflect.Float32:
@@ -161,7 +163,7 @@ func (t *Table) Append(data interface{}) error {
 		c_data = unsafe.Pointer(&val)
 
 	default:
-		return fmt.Errorf("PT Append does not support datatype (%s).", rt.Kind())
+		return fmt.Errorf("hdf5: PT Append does not support datatype (%s).", rt.Kind())
 	}
 
 	err := C.H5PTappend(t.id, c_nrecords, c_data)
