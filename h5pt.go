@@ -92,39 +92,73 @@ func (t *Table) Append(data interface{}) error {
 	rv := reflect.Indirect(reflect.ValueOf(data))
 	rp := reflect.Indirect(reflect.ValueOf(&data))
 	rt := rv.Type()
-	c_nrecords := C.size_t(0)
+	c_nrecords := C.size_t(1)
 	c_data := unsafe.Pointer(nil)
 
-	fmt.Println(rt.Kind())
 	switch rt.Kind() {
-
-	case reflect.Array:
-		c_nrecords = C.size_t(rv.Len())
-		c_data = unsafe.Pointer(rp.UnsafeAddr())
-
-	case reflect.Slice:
-		c_nrecords = C.size_t(rv.Len())
-		slice := (*reflect.SliceHeader)(unsafe.Pointer(rp.UnsafeAddr()))
-		c_data = unsafe.Pointer(slice.Data)
+	case reflect.Slice, reflect.Array:
+		for _, d := range data.([]interface{}) {
+			if err := t.Append(d); err != nil {
+				return err
+			}
+		}
+		return nil
 
 	case reflect.String:
-		c_nrecords = C.size_t(1)
 		string_data := C.CString(rv.String())
 		c_data = unsafe.Pointer(&string_data)
 		t.strings = append(t.strings, unsafe.Pointer(string_data))
 
 	case reflect.Ptr:
-		c_nrecords = C.size_t(1)
 		ptrval := rp.Elem()
 		c_data = unsafe.Pointer(&ptrval)
 
-	case reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32,
-		reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16,
-		reflect.Uint32, reflect.Uint64, reflect.Uintptr, reflect.Float32,
-		reflect.Float64, reflect.Complex64, reflect.Complex128:
-		c_nrecords = C.size_t(1)
-		ptrval := rp.Elem()
-		c_data = unsafe.Pointer(&ptrval)
+	case reflect.Bool:
+		val := C.uchar(0)
+		if data.(bool) {
+			val = 1
+		}
+		c_data = unsafe.Pointer(&val)
+
+	case reflect.Int8:
+		val := C.char(data.(int8))
+		c_data = unsafe.Pointer(&val)
+
+	case reflect.Uint8:
+		val := C.uchar(data.(int8))
+		c_data = unsafe.Pointer(&val)
+
+	case reflect.Int32:
+		val := C.int(data.(int32))
+		c_data = unsafe.Pointer(&val)
+
+	case reflect.Uint32:
+		val := C.uint(data.(uint32))
+		c_data = unsafe.Pointer(&val)
+
+	case reflect.Int64:
+		val := C.long(data.(int64))
+		c_data = unsafe.Pointer(&val)
+
+	case reflect.Uint64:
+		val := C.ulong(data.(uint64))
+		c_data = unsafe.Pointer(&val)
+
+	case reflect.Float32:
+		val := C.float(data.(float32))
+		c_data = unsafe.Pointer(&val)
+
+	case reflect.Float64:
+		val := C.double(data.(float64))
+		c_data = unsafe.Pointer(&val)
+
+	case reflect.Complex64:
+		val := C.complexfloat(data.(complex64))
+		c_data = unsafe.Pointer(&val)
+
+	case reflect.Complex128:
+		val := C.complexdouble(data.(complex128))
+		c_data = unsafe.Pointer(&val)
 
 	default:
 		return fmt.Errorf("PT Append does not support datatype (%s).", rt.Kind())
