@@ -239,9 +239,15 @@ func createTable(id C.hid_t, name string, dtype *Datatype, chunkSize, compressio
 	c_name := C.CString(name)
 	defer C.free(unsafe.Pointer(c_name))
 
+	properties := C.H5Pcreate(C.H5P_DATASET_CREATE)
+	if err := checkID(properties); err != nil {
+		return nil, err
+	}
+	C.H5Pset_deflate(properties, C.uint(compression))
+
 	chunk := C.hsize_t(chunkSize)
-	compr := C.int(compression)
-	hid := C.H5PTcreate_fl(id, c_name, dtype.id, chunk, compr)
+
+	hid := C.H5PTcreate(id, c_name, dtype.id, chunk, properties)
 	if err := checkID(hid); err != nil {
 		return nil, err
 	}
